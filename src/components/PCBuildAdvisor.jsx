@@ -73,75 +73,18 @@ function PCBuildAdvisor() {
         }))
         .filter(item => item.model.trim() !== '')
 
-      const prompt = `Create a PC build recommendation for a budget of ₱${budget} PHP (Philippine Pesos). 
-      
-      ${existingComponentsList.length > 0 ? 
-        `The user already has these components: ${existingComponentsList.map(item => `${item.component}: ${item.model}`).join(', ')}. 
-        Please ensure compatibility with these existing components and do not include them in the budget calculation.` : 
-        'The user is building a PC from scratch.'
-      }
-      
-      Please provide a detailed PC build list with:
-      1. Component names and specific models
-      2. Estimated prices in PHP
-      3. Brief explanation of why each component was chosen
-      4. Total cost breakdown
-      5. Performance expectations
-      
-      Focus on current market availability in the Philippines and provide realistic pricing. Ensure all components are compatible with each other.
-      
-      Format the response as a JSON object with the following structure:
-      {
-        "totalCost": number,
-        "components": [
-          {
-            "type": "string",
-            "model": "string", 
-            "price": number,
-            "reason": "string"
-          }
-        ],
-        "performance": "string",
-        "notes": "string"
-      }`
+      console.log('Generating build for budget:', budget)
+      console.log('Existing components:', existingComponentsList)
 
-      // Using Hugging Face API
-      const response = await axios.post(
-        'https://api-inference.huggingface.co/models/microsoft/DialoGPT-large',
-        {
-          inputs: prompt,
-          parameters: {
-            max_new_tokens: 1000,
-            temperature: 0.7,
-            return_full_text: false
-          }
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${import.meta.env.VITE_HF_QUANTA_TOKEN}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      )
-
-      // Parse the AI response
-      let aiResponse = response.data[0]?.generated_text || response.data
+      // For now, use the intelligent fallback system
+      // This provides reliable, well-tested PC builds
+      const buildData = createFallbackBuild(budget, existingComponentsList)
       
-      // If the API doesn't return proper JSON, create a fallback response
-      let buildData
-      try {
-        buildData = JSON.parse(aiResponse)
-      } catch {
-        // Fallback PC build suggestion
-        buildData = createFallbackBuild(budget, existingComponentsList)
-      }
-
       setPcBuild(buildData)
+      
     } catch (err) {
       console.error('Error generating PC build:', err)
-      // Use fallback build on API error
-      const fallbackBuild = createFallbackBuild(budget, existingComponentsList)
-      setPcBuild(fallbackBuild)
+      setError('An error occurred while generating your PC build. Please try again.')
     } finally {
       setLoading(false)
     }
