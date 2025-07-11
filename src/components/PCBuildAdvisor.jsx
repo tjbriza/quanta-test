@@ -189,8 +189,8 @@ Return ONLY a JSON object with this exact structure:
         console.error('Failed to parse AI response:', parseError)
         console.log('Raw AI response:', aiResponse)
         
-        // Create a structured response based on budget ranges as last resort
-        buildData = createBudgetBasedBuild(budget, existingComponentsList)
+        // If AI response can't be parsed, show error instead of fallback
+        throw new Error('AI response could not be parsed as valid JSON')
       }
 
       setPcBuild(buildData)
@@ -204,126 +204,10 @@ Return ONLY a JSON object with this exact structure:
         data: err.response?.data
       })
       
-      // Fallback to budget-based generation
-      try {
-        console.log('Attempting fallback build generation...')
-        const buildData = createBudgetBasedBuild(budget, existingComponentsList)
-        console.log('Fallback build generated successfully:', buildData)
-        setPcBuild(buildData)
-      } catch (fallbackError) {
-        console.error('Fallback build generation failed:', fallbackError)
-        setError(`Unable to generate PC build recommendation. Error: ${fallbackError.message || 'Unknown error'}`)
-      }
+      // No fallback - purely AI-driven
+      setError(`AI generation failed: ${err.message || 'Please check your connection and try again.'}`)
     } finally {
       setLoading(false)
-    }
-  }
-
-  // Budget-based build generator as fallback
-  const createBudgetBasedBuild = (budget, existingComponents) => {
-    const budgetNum = parseFloat(budget)
-    const excludedComponents = existingComponents.map(item => item.component)
-    
-    let components = []
-    let totalCost = 0
-    
-    // Calculate available budget (subtract existing component estimated values if any)
-    let availableBudget = budgetNum
-    
-    // Add components based on budget and what's not already owned
-    if (!excludedComponents.includes('processor')) {
-      if (budgetNum >= 50000) {
-        components.push({ type: 'Processor', model: 'AMD Ryzen 7 5800X', price: 18000, reason: 'High-performance 8-core CPU for gaming and productivity' })
-        totalCost += 18000
-      } else if (budgetNum >= 30000) {
-        components.push({ type: 'Processor', model: 'AMD Ryzen 5 5600X', price: 12000, reason: 'Excellent 6-core CPU with great price-to-performance' })
-        totalCost += 12000
-      } else {
-        components.push({ type: 'Processor', model: 'AMD Ryzen 5 3600', price: 8000, reason: 'Solid budget CPU for mainstream performance' })
-        totalCost += 8000
-      }
-    }
-
-    if (!excludedComponents.includes('motherboard')) {
-      if (budgetNum >= 50000) {
-        components.push({ type: 'Motherboard', model: 'MSI B550 TOMAHAWK', price: 8500, reason: 'Feature-rich B550 board with PCIe 4.0 support' })
-        totalCost += 8500
-      } else {
-        components.push({ type: 'Motherboard', model: 'MSI B450M PRO-VDH MAX', price: 4500, reason: 'Reliable budget motherboard with good features' })
-        totalCost += 4500
-      }
-    }
-
-    if (!excludedComponents.includes('memory')) {
-      if (budgetNum >= 40000) {
-        components.push({ type: 'Memory', model: 'Corsair Vengeance LPX 32GB DDR4-3200', price: 8000, reason: '32GB for heavy multitasking and future-proofing' })
-        totalCost += 8000
-      } else {
-        components.push({ type: 'Memory', model: 'G.Skill Ripjaws V 16GB DDR4-3200', price: 4000, reason: '16GB sweet spot for gaming and productivity' })
-        totalCost += 4000
-      }
-    }
-
-    if (!excludedComponents.includes('gpu')) {
-      if (budgetNum >= 60000) {
-        components.push({ type: 'Graphics Card', model: 'RTX 4060 Ti', price: 25000, reason: 'Excellent 1440p gaming performance with ray tracing' })
-        totalCost += 25000
-      } else if (budgetNum >= 40000) {
-        components.push({ type: 'Graphics Card', model: 'RTX 3060', price: 18000, reason: 'Great 1080p gaming with ray tracing support' })
-        totalCost += 18000
-      } else {
-        components.push({ type: 'Graphics Card', model: 'GTX 1660 Super', price: 12000, reason: 'Solid 1080p gaming performance at budget price' })
-        totalCost += 12000
-      }
-    }
-
-    if (!excludedComponents.includes('ssd')) {
-      if (budgetNum >= 40000) {
-        components.push({ type: 'Storage', model: 'Samsung 980 PRO 1TB NVMe', price: 6500, reason: 'Fast PCIe 4.0 SSD with excellent performance' })
-        totalCost += 6500
-      } else {
-        components.push({ type: 'Storage', model: 'Kingston NV2 500GB NVMe', price: 2800, reason: 'Fast NVMe SSD for quick boot and loading times' })
-        totalCost += 2800
-      }
-    }
-
-    if (!excludedComponents.includes('psu')) {
-      if (budgetNum >= 50000) {
-        components.push({ type: 'Power Supply', model: 'Seasonic Focus GX-650W 80+ Gold', price: 5500, reason: 'High-quality modular PSU with 80+ Gold efficiency' })
-        totalCost += 5500
-      } else {
-        components.push({ type: 'Power Supply', model: 'Corsair CV650 80+ Bronze', price: 3500, reason: 'Reliable PSU with adequate power for this build' })
-        totalCost += 3500
-      }
-    }
-
-    if (!excludedComponents.includes('casing')) {
-      if (budgetNum >= 40000) {
-        components.push({ type: 'Case', model: 'Fractal Design Core 1000', price: 3500, reason: 'Clean design with good airflow and cable management' })
-        totalCost += 3500
-      } else {
-        components.push({ type: 'Case', model: 'Cooler Master MasterBox Q300L', price: 2500, reason: 'Compact and affordable case with decent build quality' })
-        totalCost += 2500
-      }
-    }
-
-    if (!excludedComponents.includes('cpuCooler')) {
-      if (budgetNum >= 50000) {
-        components.push({ type: 'CPU Cooler', model: 'Noctua NH-U12S', price: 3500, reason: 'Premium air cooler with excellent cooling and low noise' })
-        totalCost += 3500
-      } else {
-        components.push({ type: 'CPU Cooler', model: 'Cooler Master Hyper 212', price: 1800, reason: 'Popular budget cooler with good performance' })
-        totalCost += 1800
-      }
-    }
-
-    return {
-      totalCost,
-      components,
-      performance: budgetNum >= 50000 ? "High-end gaming and productivity performance" : 
-                   budgetNum >= 30000 ? "Solid gaming performance at 1080p-1440p" : 
-                   "Good budget gaming and productivity performance",
-      notes: `Complete PC build optimized for ₱${budget} budget with focus on Philippine market availability and pricing.`
     }
   }
 
