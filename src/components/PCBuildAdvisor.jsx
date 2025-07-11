@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { DollarSign, Loader } from 'lucide-react'
-import axios from 'axios'
+import { HfInference } from '@huggingface/inference'
 import ComponentSelector from './ComponentSelector'
 import BudgetInput from './BudgetInput'
 import BuildRecommendation from './BuildRecommendation'
@@ -61,8 +61,8 @@ function PCBuildAdvisor() {
       tokenPrefix: apiToken?.substring(0, 3) // Only show first 3 chars for debugging
     })
     
-    if (!apiToken) {
-      setError('API configuration missing. Please contact the administrator.')
+    if (!apiToken || apiToken === "your_hugging_face_token_here") {
+      setError('MISSING HUGGING FACE TOKEN: Please check your environment variable VITE_HF_QUANTA_TOKEN on Netlify')
       return
     }
 
@@ -81,15 +81,19 @@ function PCBuildAdvisor() {
     try {
       console.log('Generating build for budget:', budget)
       console.log('Existing components:', existingComponentsList)
-      console.log('API Token available:', !!apiToken)
-      console.log('Making API request to Hugging Face...')
+      console.log('Initializing Hugging Face client...')
+
+      // Initialize HF client
+      const hf = new HfInference(apiToken)
 
       // Create a comprehensive prompt for AI-based PC build generation
       const excludedComponents = existingComponentsList.map(item => item.component)
       const requiredComponents = ['processor', 'motherboard', 'memory', 'gpu', 'ssd', 'psu', 'casing', 'cpuCooler']
         .filter(comp => !excludedComponents.includes(comp))
 
-      const prompt = `Generate a complete PC build recommendation for ₱${budget} PHP budget in the Philippines market.
+      const systemPrompt = `You are a PC build expert specializing in the Philippine market. You create complete PC build recommendations with specific component models, realistic 2025 Philippines pricing, and compatibility analysis. Always respond with valid JSON only.`
+
+      const userPrompt = `Generate a complete PC build recommendation for ₱${budget} PHP budget in the Philippines market.
 
 ${existingComponentsList.length > 0 ? 
   `User already has: ${existingComponentsList.map(item => `${item.component}: ${item.model}`).join(', ')}. Do not include these in the budget.` : 
@@ -100,7 +104,7 @@ Required components to include: ${requiredComponents.join(', ')}
 
 Provide specific models available in Philippines with realistic 2025 pricing. Ensure compatibility between all components.
 
-Return ONLY a JSON object with this exact structure:
+Respond with ONLY a JSON object in this exact structure:
 {
   "totalCost": number,
   "components": [
@@ -117,58 +121,26 @@ Return ONLY a JSON object with this exact structure:
   "notes": "compatibility and value notes"
 }`
 
-      // Try different models that should work with your token
-      let response
-      try {
-        // First try: Mistral model (good for instructions)
-        response = await axios.post(
-          'https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1',
-          {
-            inputs: prompt,
-            parameters: {
-              max_new_tokens: 800,
-              temperature: 0.3,
-              do_sample: true,
-              top_p: 0.9
-            }
-          },
-          {
-            headers: {
-              'Authorization': `Bearer ${apiToken}`,
-              'Content-Type': 'application/json'
-            },
-            timeout: 20000
-          }
-        )
-      } catch (mistralError) {
-        console.log('Mistral failed, trying GPT-2:', mistralError.response?.status)
-        // Fallback to GPT-2 if Mistral fails
-        response = await axios.post(
-          'https://api-inference.huggingface.co/models/gpt2',
-          {
-            inputs: prompt,
-            parameters: {
-              max_new_tokens: 500,
-              temperature: 0.7,
-              do_sample: true
-            }
-          },
-          {
-            headers: {
-              'Authorization': `Bearer ${apiToken}`,
-              'Content-Type': 'application/json'
-            },
-            timeout: 15000
-          }
-        )
-      }
+      console.log('Making AI request with Mistral model...')
+      
+      // Use the reliable Mistral model
+      const response = await hf.chatCompletion({
+        model: "mistralai/Mixtral-8x7B-Instruct-v0.1",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        max_tokens: 1000,
+        temperature: 0.3
+      })
 
-      console.log('API Response:', response.data)
+      console.log('AI Response received:', response)
 
       // Parse the AI response
-      let buildData
-      let aiResponse = response.data[0]?.generated_text || response.data
+      const aiResponse = response.choices[0].message.content
+      console.log('Raw AI response:', aiResponse)
 
+      let buildData
       try {
         // Try to extract JSON from the response
         const jsonMatch = aiResponse.match(/\{[\s\S]*?\}/)
@@ -180,32 +152,38 @@ Return ONLY a JSON object with this exact structure:
 
         // Validate the response has required structure
         if (!buildData.components || !Array.isArray(buildData.components) || buildData.components.length === 0) {
-          throw new Error('Invalid response structure')
+          throw new Error('Invalid response structure - missing components array')
         }
 
         console.log('Successfully parsed AI response:', buildData)
 
       } catch (parseError) {
         console.error('Failed to parse AI response:', parseError)
-        console.log('Raw AI response:', aiResponse)
+        console.log('Raw AI response for debugging:', aiResponse)
         
-        // If AI response can't be parsed, show error instead of fallback
-        throw new Error('AI response could not be parsed as valid JSON')
+        // If AI response can't be parsed, show error with more details
+        throw new Error(`AI response could not be parsed as valid JSON: ${parseError.message}`)
       }
 
       setPcBuild(buildData)
       
     } catch (err) {
       console.error('Error generating PC build:', err)
-      console.error('Error details:', {
-        message: err.message,
-        status: err.response?.status,
-        statusText: err.response?.statusText,
-        data: err.response?.data
-      })
       
-      // No fallback - purely AI-driven
-      setError(`AI generation failed: ${err.message || 'Please check your connection and try again.'}`)
+      // Provide detailed error messages
+      let errorMessage = 'AI generation failed: '
+      
+      if (err.message.includes('API token') || err.message.includes('Missing')) {
+        errorMessage += 'Invalid or missing Hugging Face API token. Please check your environment variables.'
+      } else if (err.message.includes('JSON')) {
+        errorMessage += 'AI returned invalid format. Please try again.'
+      } else if (err.message.includes('network') || err.message.includes('timeout')) {
+        errorMessage += 'Network connection issue. Please check your internet and try again.'
+      } else {
+        errorMessage += err.message || 'Unknown error occurred. Please try again.'
+      }
+      
+      setError(errorMessage)
     } finally {
       setLoading(false)
     }
