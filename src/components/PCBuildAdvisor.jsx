@@ -74,6 +74,8 @@ function PCBuildAdvisor() {
 
       console.log('Generating build for budget:', budget)
       console.log('Existing components:', existingComponentsList)
+      console.log('API Token available:', !!apiToken)
+      console.log('Making API request to Hugging Face...')
 
       // Create a comprehensive prompt for AI-based PC build generation
       const excludedComponents = existingComponentsList.map(item => item.component)
@@ -108,17 +110,15 @@ Return ONLY a JSON object with this exact structure:
   "notes": "compatibility and value notes"
 }`
 
-      // Using Hugging Face API with a better model for structured output
+      // Using Hugging Face API with a reliable text generation model
       const response = await axios.post(
-        'https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium',
+        'https://api-inference.huggingface.co/models/google/flan-t5-base',
         {
           inputs: prompt,
           parameters: {
-            max_length: 1000,
-            temperature: 0.7,
-            do_sample: true,
-            top_p: 0.9,
-            repetition_penalty: 1.1
+            max_new_tokens: 512,
+            temperature: 0.3,
+            do_sample: false
           }
         },
         {
@@ -126,7 +126,7 @@ Return ONLY a JSON object with this exact structure:
             'Authorization': `Bearer ${apiToken}`,
             'Content-Type': 'application/json'
           },
-          timeout: 30000
+          timeout: 15000
         }
       )
 
@@ -161,13 +161,22 @@ Return ONLY a JSON object with this exact structure:
       
     } catch (err) {
       console.error('Error generating PC build:', err)
+      console.error('Error details:', {
+        message: err.message,
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        data: err.response?.data
+      })
       
       // Fallback to budget-based generation
       try {
+        console.log('Attempting fallback build generation...')
         const buildData = createBudgetBasedBuild(budget, existingComponentsList)
+        console.log('Fallback build generated successfully:', buildData)
         setPcBuild(buildData)
       } catch (fallbackError) {
-        setError('Unable to generate PC build recommendation. Please try again.')
+        console.error('Fallback build generation failed:', fallbackError)
+        setError(`Unable to generate PC build recommendation. Error: ${fallbackError.message || 'Unknown error'}`)
       }
     } finally {
       setLoading(false)
