@@ -55,6 +55,12 @@ function PCBuildAdvisor() {
 
     // Check if API token is available
     const apiToken = import.meta.env.VITE_HF_QUANTA_TOKEN
+    console.log('Environment check:', {
+      hasToken: !!apiToken,
+      tokenLength: apiToken?.length,
+      tokenPrefix: apiToken?.substring(0, 3) // Only show first 3 chars for debugging
+    })
+    
     if (!apiToken) {
       setError('API configuration missing. Please contact the administrator.')
       return
@@ -76,16 +82,118 @@ function PCBuildAdvisor() {
       console.log('Generating build for budget:', budget)
       console.log('Existing components:', existingComponentsList)
       console.log('API Token available:', !!apiToken)
-      
-      // For now, prioritize reliable local generation over unreliable API
-      // This ensures users always get good PC build recommendations
-      console.log('Using intelligent local build generation...')
-      const buildData = createBudgetBasedBuild(budget, existingComponentsList)
-      console.log('Build generated successfully:', buildData)
+      console.log('Making API request to Hugging Face...')
+
+      // Create a comprehensive prompt for AI-based PC build generation
+      const excludedComponents = existingComponentsList.map(item => item.component)
+      const requiredComponents = ['processor', 'motherboard', 'memory', 'gpu', 'ssd', 'psu', 'casing', 'cpuCooler']
+        .filter(comp => !excludedComponents.includes(comp))
+
+      const prompt = `Generate a complete PC build recommendation for ₱${budget} PHP budget in the Philippines market.
+
+${existingComponentsList.length > 0 ? 
+  `User already has: ${existingComponentsList.map(item => `${item.component}: ${item.model}`).join(', ')}. Do not include these in the budget.` : 
+  'User is building from scratch.'
+}
+
+Required components to include: ${requiredComponents.join(', ')}
+
+Provide specific models available in Philippines with realistic 2025 pricing. Ensure compatibility between all components.
+
+Return ONLY a JSON object with this exact structure:
+{
+  "totalCost": number,
+  "components": [
+    {"type": "Processor", "model": "specific model name", "price": number, "reason": "explanation"},
+    {"type": "Motherboard", "model": "specific model name", "price": number, "reason": "explanation"},
+    {"type": "Memory", "model": "specific model name", "price": number, "reason": "explanation"},
+    {"type": "Graphics Card", "model": "specific model name", "price": number, "reason": "explanation"},
+    {"type": "Storage", "model": "specific model name", "price": number, "reason": "explanation"},
+    {"type": "Power Supply", "model": "specific model name", "price": number, "reason": "explanation"},
+    {"type": "Case", "model": "specific model name", "price": number, "reason": "explanation"},
+    {"type": "CPU Cooler", "model": "specific model name", "price": number, "reason": "explanation"}
+  ],
+  "performance": "overall system performance description",
+  "notes": "compatibility and value notes"
+}`
+
+      // Try different models that should work with your token
+      let response
+      try {
+        // First try: Mistral model (good for instructions)
+        response = await axios.post(
+          'https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1',
+          {
+            inputs: prompt,
+            parameters: {
+              max_new_tokens: 800,
+              temperature: 0.3,
+              do_sample: true,
+              top_p: 0.9
+            }
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${apiToken}`,
+              'Content-Type': 'application/json'
+            },
+            timeout: 20000
+          }
+        )
+      } catch (mistralError) {
+        console.log('Mistral failed, trying GPT-2:', mistralError.response?.status)
+        // Fallback to GPT-2 if Mistral fails
+        response = await axios.post(
+          'https://api-inference.huggingface.co/models/gpt2',
+          {
+            inputs: prompt,
+            parameters: {
+              max_new_tokens: 500,
+              temperature: 0.7,
+              do_sample: true
+            }
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${apiToken}`,
+              'Content-Type': 'application/json'
+            },
+            timeout: 15000
+          }
+        )
+      }
+
+      console.log('API Response:', response.data)
+
+      // Parse the AI response
+      let buildData
+      let aiResponse = response.data[0]?.generated_text || response.data
+
+      try {
+        // Try to extract JSON from the response
+        const jsonMatch = aiResponse.match(/\{[\s\S]*?\}/)
+        if (jsonMatch) {
+          buildData = JSON.parse(jsonMatch[0])
+        } else {
+          throw new Error('No JSON found in AI response')
+        }
+
+        // Validate the response has required structure
+        if (!buildData.components || !Array.isArray(buildData.components) || buildData.components.length === 0) {
+          throw new Error('Invalid response structure')
+        }
+
+        console.log('Successfully parsed AI response:', buildData)
+
+      } catch (parseError) {
+        console.error('Failed to parse AI response:', parseError)
+        console.log('Raw AI response:', aiResponse)
+        
+        // Create a structured response based on budget ranges as last resort
+        buildData = createBudgetBasedBuild(budget, existingComponentsList)
+      }
+
       setPcBuild(buildData)
-      
-      // Optional: Try API in background for future enhancement
-      // but don't block user experience
       
     } catch (err) {
       console.error('Error generating PC build:', err)
