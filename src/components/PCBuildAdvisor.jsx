@@ -104,21 +104,22 @@ Required components to include: ${requiredComponents.join(', ')}
 
 Provide specific models available in Philippines with realistic 2025 pricing. Ensure compatibility between all components.
 
-Respond with ONLY a JSON object in this exact structure:
+IMPORTANT: Respond with ONLY valid JSON, no other text or formatting. Use this exact structure:
+
 {
-  "totalCost": number,
+  "totalCost": 50000,
   "components": [
-    {"type": "Processor", "model": "specific model name", "price": number, "reason": "explanation"},
-    {"type": "Motherboard", "model": "specific model name", "price": number, "reason": "explanation"},
-    {"type": "Memory", "model": "specific model name", "price": number, "reason": "explanation"},
-    {"type": "Graphics Card", "model": "specific model name", "price": number, "reason": "explanation"},
-    {"type": "Storage", "model": "specific model name", "price": number, "reason": "explanation"},
-    {"type": "Power Supply", "model": "specific model name", "price": number, "reason": "explanation"},
-    {"type": "Case", "model": "specific model name", "price": number, "reason": "explanation"},
-    {"type": "CPU Cooler", "model": "specific model name", "price": number, "reason": "explanation"}
+    {"type": "Processor", "model": "AMD Ryzen 5 5600X", "price": 12000, "reason": "Great price to performance ratio"},
+    {"type": "Motherboard", "model": "MSI B550M PRO-VDH", "price": 4500, "reason": "Compatible with Ryzen 5000 series"},
+    {"type": "Memory", "model": "G.Skill Ripjaws V 16GB DDR4-3200", "price": 4000, "reason": "Optimal capacity for gaming"},
+    {"type": "Graphics Card", "model": "RTX 3060", "price": 18000, "reason": "Excellent 1080p gaming performance"},
+    {"type": "Storage", "model": "Kingston NV2 500GB NVMe", "price": 2800, "reason": "Fast boot and loading times"},
+    {"type": "Power Supply", "model": "Corsair CV650", "price": 3500, "reason": "Adequate power for this build"},
+    {"type": "Case", "model": "Cooler Master MasterBox Q300L", "price": 2500, "reason": "Good airflow and cable management"},
+    {"type": "CPU Cooler", "model": "Cooler Master Hyper 212", "price": 1800, "reason": "Efficient cooling for mid-range CPU"}
   ],
-  "performance": "overall system performance description",
-  "notes": "compatibility and value notes"
+  "performance": "Great 1080p gaming performance with room for upgrades",
+  "notes": "All components are compatible and commonly available in Philippines"
 }`
 
       console.log('Making AI request with Mistral model...')
@@ -142,27 +143,72 @@ Respond with ONLY a JSON object in this exact structure:
 
       let buildData
       try {
-        // Try to extract JSON from the response
-        const jsonMatch = aiResponse.match(/\{[\s\S]*?\}/)
-        if (jsonMatch) {
-          buildData = JSON.parse(jsonMatch[0])
-        } else {
-          throw new Error('No JSON found in AI response')
+        // Clean the AI response to extract JSON
+        let cleanedResponse = aiResponse.trim()
+        
+        // Remove any markdown formatting
+        cleanedResponse = cleanedResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '')
+        
+        // Try to find JSON object bounds more carefully
+        const jsonStart = cleanedResponse.indexOf('{')
+        const jsonEnd = cleanedResponse.lastIndexOf('}') + 1
+        
+        if (jsonStart === -1 || jsonEnd === 0) {
+          throw new Error('No JSON object found in AI response')
         }
+        
+        const jsonString = cleanedResponse.substring(jsonStart, jsonEnd)
+        console.log('Extracted JSON string:', jsonString)
+        
+        // Parse the JSON
+        buildData = JSON.parse(jsonString)
 
         // Validate the response has required structure
         if (!buildData.components || !Array.isArray(buildData.components) || buildData.components.length === 0) {
           throw new Error('Invalid response structure - missing components array')
         }
 
-        console.log('Successfully parsed AI response:', buildData)
+        // Ensure all components have required fields
+        buildData.components = buildData.components.map(comp => ({
+          type: comp.type || 'Unknown Component',
+          model: comp.model || 'Model not specified',
+          price: typeof comp.price === 'number' ? comp.price : 0,
+          reason: comp.reason || 'No reason provided'
+        }))
+
+        // Ensure totalCost is a number
+        buildData.totalCost = typeof buildData.totalCost === 'number' ? buildData.totalCost : 
+                             buildData.components.reduce((sum, comp) => sum + comp.price, 0)
+
+        console.log('Successfully parsed and validated AI response:', buildData)
 
       } catch (parseError) {
         console.error('Failed to parse AI response:', parseError)
         console.log('Raw AI response for debugging:', aiResponse)
         
-        // If AI response can't be parsed, show error with more details
-        throw new Error(`AI response could not be parsed as valid JSON: ${parseError.message}`)
+        // Try to create a basic structure from the AI response if it contains component info
+        if (aiResponse.toLowerCase().includes('processor') || aiResponse.toLowerCase().includes('cpu')) {
+          console.log('Attempting to extract component info from text response...')
+          
+          // Create a basic fallback structure
+          buildData = {
+            totalCost: parseInt(budget) || 0,
+            components: [
+              {
+                type: "AI Response",
+                model: "Generated recommendation",
+                price: parseInt(budget) || 0,
+                reason: "AI provided text response instead of JSON format"
+              }
+            ],
+            performance: "AI generated recommendation",
+            notes: `AI Response: ${aiResponse.substring(0, 500)}...`
+          }
+          
+          console.log('Created fallback structure from AI text response')
+        } else {
+          throw new Error(`AI response could not be parsed as valid JSON: ${parseError.message}`)
+        }
       }
 
       setPcBuild(buildData)
