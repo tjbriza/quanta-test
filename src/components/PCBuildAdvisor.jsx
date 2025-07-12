@@ -53,12 +53,12 @@ function PCBuildAdvisor() {
       return
     }
 
-    // Check if API token is available
+    // Check API token
     const apiToken = import.meta.env.VITE_HF_QUANTA_TOKEN
     console.log('Environment check:', {
       hasToken: !!apiToken,
       tokenLength: apiToken?.length,
-      tokenPrefix: apiToken?.substring(0, 3) // Only show first 3 chars for debugging
+      tokenPrefix: apiToken?.substring(0, 3) // Debug
     })
     
     if (!apiToken || apiToken === "your_hugging_face_token_here") {
@@ -69,7 +69,7 @@ function PCBuildAdvisor() {
     setLoading(true)
     setError('')
     
-    // Define existingComponentsList outside try block so it's available in catch
+    // Get existing components
     const existingComponentsList = Object.entries(existingComponents)
       .filter(([key, value]) => value)
       .map(([key, value]) => ({
@@ -83,10 +83,10 @@ function PCBuildAdvisor() {
       console.log('Existing components:', existingComponentsList)
       console.log('Initializing Hugging Face client...')
 
-      // Initialize HF client
+      // Init HF client
       const hf = new HfInference(apiToken)
 
-      // Create a comprehensive prompt for AI-based PC build generation
+      // Create prompt
       const excludedComponents = existingComponentsList.map(item => item.component)
       const requiredComponents = ['processor', 'motherboard', 'memory', 'gpu', 'ssd', 'psu', 'casing', 'cpuCooler']
         .filter(comp => !excludedComponents.includes(comp))
@@ -124,7 +124,7 @@ IMPORTANT: Respond with ONLY valid JSON, no other text or formatting. Use this e
 
       console.log('Making AI request with Mistral model...')
       
-      // Use the reliable VITE_HF_QUANTA_TOKEN
+      // Make request
       const response = await hf.chatCompletion({
         model: "mistralai/Mixtral-8x7B-Instruct-v0.1",
         messages: [
@@ -137,19 +137,19 @@ IMPORTANT: Respond with ONLY valid JSON, no other text or formatting. Use this e
 
       console.log('AI Response received:', response)
 
-      // Parse the AI response
+      // Parse response
       const aiResponse = response.choices[0].message.content
       console.log('Raw AI response:', aiResponse)
 
       let buildData
       try {
-        // Clean the AI response to extract JSON
+        // Clean response
         let cleanedResponse = aiResponse.trim()
         
-        // Remove any markdown formatting
+        // Remove markdown
         cleanedResponse = cleanedResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '')
         
-        // Try to find JSON object bounds more carefully
+        // Find JSON bounds
         const jsonStart = cleanedResponse.indexOf('{')
         const jsonEnd = cleanedResponse.lastIndexOf('}') + 1
         
@@ -160,15 +160,15 @@ IMPORTANT: Respond with ONLY valid JSON, no other text or formatting. Use this e
         const jsonString = cleanedResponse.substring(jsonStart, jsonEnd)
         console.log('Extracted JSON string:', jsonString)
         
-        // Parse the JSON
+        // Parse JSON
         buildData = JSON.parse(jsonString)
 
-        // Validate the response has required structure
+        // Validate structure
         if (!buildData.components || !Array.isArray(buildData.components) || buildData.components.length === 0) {
           throw new Error('Invalid response structure - missing components array')
         }
 
-        // Ensure all components have required fields
+        // Fix component fields
         buildData.components = buildData.components.map(comp => ({
           type: comp.type || 'Unknown Component',
           model: comp.model || 'Model not specified',
@@ -176,7 +176,7 @@ IMPORTANT: Respond with ONLY valid JSON, no other text or formatting. Use this e
           reason: comp.reason || 'No reason provided'
         }))
 
-        // Ensure totalCost is a number
+        // Fix total cost
         buildData.totalCost = typeof buildData.totalCost === 'number' ? buildData.totalCost : 
                              buildData.components.reduce((sum, comp) => sum + comp.price, 0)
 
@@ -186,11 +186,11 @@ IMPORTANT: Respond with ONLY valid JSON, no other text or formatting. Use this e
         console.error('Failed to parse AI response:', parseError)
         console.log('Raw AI response for debugging:', aiResponse)
         
-        // Try to create a basic structure from the AI response if it contains component info
+        // Create fallback if response has component info
         if (aiResponse.toLowerCase().includes('processor') || aiResponse.toLowerCase().includes('cpu')) {
           console.log('Attempting to extract component info from text response...')
           
-          // Create a basic fallback structure
+          // Fallback structure
           buildData = {
             totalCost: parseInt(budget) || 0,
             components: [
@@ -216,7 +216,7 @@ IMPORTANT: Respond with ONLY valid JSON, no other text or formatting. Use this e
     } catch (err) {
       console.error('Error generating PC build:', err)
       
-      // Provide detailed error messages
+      // Handle errors
       let errorMessage = 'AI generation failed: '
       
       if (err.message.includes('API token') || err.message.includes('Missing')) {
