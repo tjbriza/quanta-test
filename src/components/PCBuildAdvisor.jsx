@@ -1,14 +1,51 @@
 import { useState } from 'react'
 import { DollarSign, Loader } from 'lucide-react'
 import { HfInference } from '@huggingface/inference'
+import ComponentSelector from './ComponentSelector'
 import BudgetInput from './BudgetInput'
 import BuildRecommendation from './BuildRecommendation'
 
 function PCBuildAdvisor() {
   const [budget, setBudget] = useState('')
+  const [existingComponents, setExistingComponents] = useState({
+    processor: false,
+    motherboard: false,
+    memory: false,
+    gpu: false,
+    ssd: false,
+    hdd: false,
+    psu: false,
+    casing: false,
+    cpuCooler: false
+  })
+  const [componentModels, setComponentModels] = useState({
+    processor: '',
+    motherboard: '',
+    memory: '',
+    gpu: '',
+    ssd: '',
+    hdd: '',
+    psu: '',
+    casing: '',
+    cpuCooler: ''
+  })
   const [pcBuild, setPcBuild] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  const handleComponentChange = (component, checked) => {
+    setExistingComponents(prev => ({
+      ...prev,
+      [component]: checked
+    }))
+  }
+
+  const handleModelChange = (component, model) => {
+    setComponentModels(prev => ({
+      ...prev,
+      [component]: model
+    }))
+  }
 
   const generatePCBuild = async () => {
     if (!budget || budget <= 0) {
@@ -32,21 +69,36 @@ function PCBuildAdvisor() {
     setLoading(true)
     setError('')
     
+    // Define existingComponentsList outside try block so it's available in catch
+    const existingComponentsList = Object.entries(existingComponents)
+      .filter(([key, value]) => value)
+      .map(([key, value]) => ({
+        component: key,
+        model: componentModels[key]
+      }))
+      .filter(item => item.model.trim() !== '')
+    
     try {
       console.log('Generating build for budget:', budget)
+      console.log('Existing components:', existingComponentsList)
       console.log('Initializing Hugging Face client...')
 
       // Initialize HF client
       const hf = new HfInference(apiToken)
 
       // Create a comprehensive prompt for AI-based PC build generation
+      const excludedComponents = existingComponentsList.map(item => item.component)
       const requiredComponents = ['processor', 'motherboard', 'memory', 'gpu', 'ssd', 'psu', 'casing', 'cpuCooler']
+        .filter(comp => !excludedComponents.includes(comp))
 
       const systemPrompt = `You are a PC build expert specializing in the Philippine market. You create complete PC build recommendations with specific component models, realistic 2025 Philippines pricing, and compatibility analysis. Always respond with valid JSON only.`
 
       const userPrompt = `Generate a complete PC build recommendation for ₱${budget} PHP budget in the Philippines market.
 
-User is building from scratch.
+${existingComponentsList.length > 0 ? 
+  `User already has: ${existingComponentsList.map(item => `${item.component}: ${item.model}`).join(', ')}. Do not include these in the budget.` : 
+  'User is building from scratch.'
+}
 
 Required components to include: ${requiredComponents.join(', ')}
 
@@ -72,7 +124,7 @@ IMPORTANT: Respond with ONLY valid JSON, no other text or formatting. Use this e
 
       console.log('Making AI request with Mistral model...')
       
-      // Use the reliable Mistral model
+      // Use the reliable VITE_HF_QUANTA_TOKEN
       const response = await hf.chatCompletion({
         model: "mistralai/Mixtral-8x7B-Instruct-v0.1",
         messages: [
@@ -202,6 +254,13 @@ IMPORTANT: Respond with ONLY valid JSON, no other text or formatting. Use this e
           </h2>
           
           <BudgetInput budget={budget} setBudget={setBudget} />
+
+          <ComponentSelector
+            existingComponents={existingComponents}
+            componentModels={componentModels}
+            onComponentChange={handleComponentChange}
+            onModelChange={handleModelChange}
+          />
 
           <button
             onClick={generatePCBuild}
